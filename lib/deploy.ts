@@ -1,11 +1,11 @@
-import { S3 } from "aws-sdk"
 import { type NextRequest, NextResponse } from "next/server"
+import { S3 } from "aws-sdk"
 import { v4 as uuidv4 } from "uuid"
 
 // Configure AWS SDK
-const s3 = new S3({
-  accessKeyId: process.env.AWS_ACCESS_KEY,
-  secretAccessKey: process.env.AWS_SECRET_KEY,
+const s3Client = new S3({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_KEY_ID,
   region: process.env.AWS_REGION,
 })
 
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      await s3
+      await s3Client
         .putObject({
           Bucket: process.env.S3_BUCKET_NAME!,
           Key: `deployments/${projectId}/metadata.json`,
@@ -77,6 +77,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error: "Failed to create deployment record in S3. Check your AWS credentials and permissions.",
+          details: s3Error instanceof Error ? s3Error.message : String(s3Error),
         },
         { status: 500 },
       )
@@ -109,7 +110,7 @@ export async function POST(request: NextRequest) {
     `
 
     try {
-      await s3
+      await s3Client
         .putObject({
           Bucket: process.env.S3_BUCKET_NAME!,
           Key: `${projectId}/index.html`,
@@ -123,6 +124,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error: "Failed to create placeholder page in S3. Check your AWS credentials and permissions.",
+          details: s3Error instanceof Error ? s3Error.message : String(s3Error),
         },
         { status: 500 },
       )
@@ -141,7 +143,10 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Unhandled error in deploy API:", error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "An unknown error occurred" },
+      {
+        error: "An unexpected error occurred",
+        details: error instanceof Error ? error.message : String(error),
+      },
       { status: 500 },
     )
   }
