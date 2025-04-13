@@ -1,11 +1,11 @@
-import { type NextRequest, NextResponse } from "next/server"
 import { S3 } from "aws-sdk"
+import { type NextRequest, NextResponse } from "next/server"
 import { v4 as uuidv4 } from "uuid"
 
 // Configure AWS SDK
 const s3 = new S3({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_KEY_ID,
+  accessKeyId: process.env.AWS_ACCESS_KEY,
+  secretAccessKey: process.env.AWS_SECRET_KEY,
   region: process.env.AWS_REGION,
 })
 
