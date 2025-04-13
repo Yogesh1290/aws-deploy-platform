@@ -34,12 +34,18 @@ export default function DeployForm() {
         body: JSON.stringify({ repoUrl }),
       })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Deployment failed")
+      let data
+      try {
+        data = await response.json()
+      } catch (jsonError) {
+        console.error("Error parsing JSON response:", jsonError)
+        throw new Error("Invalid response from server. Please try again.")
       }
 
-      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || "Deployment failed")
+      }
+
       setDeploymentUrl(data.deploymentUrl)
       setIsDeploying(false)
     } catch (err) {

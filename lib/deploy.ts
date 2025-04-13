@@ -4,31 +4,44 @@ import { v4 as uuidv4 } from "uuid"
 
 // Configure AWS SDK
 const s3 = new S3({
-  accessKeyId: process.env.AWS_ACCESS_KEY,
-  secretAccessKey: process.env.AWS_SECRET_KEY,
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_KEY_ID,
   region: process.env.AWS_REGION,
 })
 
 export async function POST(request: NextRequest) {
-  const { repoUrl } = await request.json()
-
-  // Validate input
-  if (!repoUrl) {
-    return NextResponse.json({ error: "Repository URL is required" }, { status: 400 })
-  }
-
-  // Validate that the URL is a GitHub repository
-  const githubRegex = /^https:\/\/github\.com\/[^/]+\/[^/]+$/
-  if (!githubRegex.test(repoUrl)) {
-    return NextResponse.json(
-      {
-        error: "Invalid GitHub repository URL. Format should be: https://github.com/username/repo",
-      },
-      { status: 400 },
-    )
-  }
-
   try {
+    // Parse the request body
+    let repoUrl
+    try {
+      const body = await request.json()
+      repoUrl = body.repoUrl
+    } catch (parseError) {
+      console.error("Error parsing request body:", parseError)
+      return NextResponse.json(
+        {
+          error: "Invalid request body. Expected JSON with repoUrl field.",
+        },
+        { status: 400 },
+      )
+    }
+
+    // Validate input
+    if (!repoUrl) {
+      return NextResponse.json({ error: "Repository URL is required" }, { status: 400 })
+    }
+
+    // Validate that the URL is a GitHub repository
+    const githubRegex = /^https:\/\/github\.com\/[^/]+\/[^/]+$/
+    if (!githubRegex.test(repoUrl)) {
+      return NextResponse.json(
+        {
+          error: "Invalid GitHub repository URL. Format should be: https://github.com/username/repo",
+        },
+        { status: 400 },
+      )
+    }
+
     // Generate a unique project ID
     const projectId = uuidv4()
 
@@ -36,6 +49,8 @@ export async function POST(request: NextRequest) {
     const urlParts = repoUrl.split("/")
     const owner = urlParts[urlParts.length - 2]
     const repo = urlParts[urlParts.length - 1]
+
+    console.log(`Deploying ${owner}/${repo} with project ID ${projectId}`)
 
     // Create a deployment record in S3
     const deploymentRecord = {
@@ -47,15 +62,25 @@ export async function POST(request: NextRequest) {
       createdAt: new Date().toISOString(),
     }
 
-    await s3
-      .putObject({
-        Bucket: process.env.S3_BUCKET_NAME!,
-        Key: `deployments/${projectId}/metadata.json`,
-        Body: JSON.stringify(deploymentRecord),
-        ContentType: "application/json",
-        ACL: "public-read",
-      })
-      .promise()
+    try {
+      await s3
+        .putObject({
+          Bucket: process.env.S3_BUCKET_NAME!,
+          Key: `deployments/${projectId}/metadata.json`,
+          Body: JSON.stringify(deploymentRecord),
+          ContentType: "application/json",
+          ACL: "public-read",
+        })
+        .promise()
+    } catch (s3Error) {
+      console.error("Error writing to S3:", s3Error)
+      return NextResponse.json(
+        {
+          error: "Failed to create deployment record in S3. Check your AWS credentials and permissions.",
+        },
+        { status: 500 },
+      )
+    }
 
     // Create a placeholder index.html
     const placeholderHtml = `
@@ -83,15 +108,25 @@ export async function POST(request: NextRequest) {
     </html>
     `
 
-    await s3
-      .putObject({
-        Bucket: process.env.S3_BUCKET_NAME!,
-        Key: `${projectId}/index.html`,
-        Body: placeholderHtml,
-        ContentType: "text/html",
-        ACL: "public-read",
-      })
-      .promise()
+    try {
+      await s3
+        .putObject({
+          Bucket: process.env.S3_BUCKET_NAME!,
+          Key: `${projectId}/index.html`,
+          Body: placeholderHtml,
+          ContentType: "text/html",
+          ACL: "public-read",
+        })
+        .promise()
+    } catch (s3Error) {
+      console.error("Error writing placeholder to S3:", s3Error)
+      return NextResponse.json(
+        {
+          error: "Failed to create placeholder page in S3. Check your AWS credentials and permissions.",
+        },
+        { status: 500 },
+      )
+    }
 
     // Generate the deployment URL
     const deploymentUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${projectId}/index.html`
@@ -104,7 +139,7 @@ export async function POST(request: NextRequest) {
       message: "Deployment has been queued. Check the URL for status updates.",
     })
   } catch (error) {
-    console.error("Error initiating deployment:", error)
+    console.error("Unhandled error in deploy API:", error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "An unknown error occurred" },
       { status: 500 },
