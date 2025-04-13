@@ -4,8 +4,8 @@ import { v4 as uuidv4 } from "uuid"
 
 // Configure AWS SDK
 const s3Client = new S3({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_KEY_ID,
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID, // Note the corrected env var name
+  secretAccessKey: process.env.AWS_SECRET_KEY_ID, // Note the corrected env var name
   region: process.env.AWS_REGION,
 })
 
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
           Key: `deployments/${projectId}/metadata.json`,
           Body: JSON.stringify(deploymentRecord),
           ContentType: "application/json",
-          ACL: "public-read",
+          // Removed ACL parameter
         })
         .promise()
     } catch (s3Error) {
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
           Key: `${projectId}/index.html`,
           Body: placeholderHtml,
           ContentType: "text/html",
-          ACL: "public-read",
+          // Removed ACL parameter
         })
         .promise()
     } catch (s3Error) {

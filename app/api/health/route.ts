@@ -13,8 +13,8 @@ export async function GET() {
       process.env.S3_BUCKET_NAME
     ) {
       const s3 = new S3({
-        accessKeyId: process.env.AWS_ACCESS_KEY,
-        secretAccessKey: process.env.AWS_SECRET_KEY,
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_KEY_ID,
         region: process.env.AWS_REGION,
       })
 
@@ -42,6 +42,8 @@ export async function GET() {
       region: process.env.AWS_REGION || "missing",
       s3Bucket: process.env.S3_BUCKET_NAME || "missing",
       s3Status,
+      accessKeyConfigured: !!process.env.AWS_ACCESS_KEY_ID,
+      secretKeyConfigured: !!process.env.AWS_SECRET_KEY_ID,
     },
   })
 }
