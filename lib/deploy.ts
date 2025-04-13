@@ -1,10 +1,10 @@
-import simpleGit from "simple-git"
+import { S3 } from "aws-sdk"
 import { exec } from "child_process"
 import fs from "fs-extra"
 import path from "path"
-import { S3 } from "aws-sdk"
-import { v4 as uuidv4 } from "uuid"
+import simpleGit from "simple-git"
 import { promisify } from "util"
+import { v4 as uuidv4 } from "uuid"
 
 const execPromise = promisify(exec)
 
@@ -15,7 +15,7 @@ const s3 = new S3({
   region: process.env.AWS_REGION,
 })
 
-const TEMP_DIR = path.join(process.cwd(), "tmp")
+const TEMP_DIR = path.join("/tmp", "aws-deploy-platform")
 
 interface DeployCallbacks {
   onLog: (message: string) => void
