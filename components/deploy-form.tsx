@@ -5,14 +5,12 @@ import type React from "react"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card } from "@/components/ui/card"
 import { Loader2, CheckCircle, AlertCircle } from "lucide-react"
 
 export default function DeployForm() {
   const [repoUrl, setRepoUrl] = useState("")
   const [isDeploying, setIsDeploying] = useState(false)
   const [deploymentUrl, setDeploymentUrl] = useState("")
-  const [logs, setLogs] = useState<string[]>([])
   const [error, setError] = useState("")
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -24,7 +22,6 @@ export default function DeployForm() {
     }
 
     setIsDeploying(true)
-    setLogs([])
     setError("")
     setDeploymentUrl("")
 
@@ -42,44 +39,9 @@ export default function DeployForm() {
         throw new Error(errorData.error || "Deployment failed")
       }
 
-      const reader = response.body?.getReader()
-
-      if (reader) {
-        // Process the stream for real-time logs
-        while (true) {
-          const { done, value } = await reader.read()
-
-          if (done) {
-            break
-          }
-
-          // Convert the Uint8Array to a string
-          const text = new TextDecoder().decode(value)
-
-          try {
-            // Try to parse as JSON
-            const data = JSON.parse(text)
-
-            if (data.type === "log") {
-              setLogs((prev) => [...prev, data.message])
-            } else if (data.type === "complete") {
-              setDeploymentUrl(data.url)
-              setIsDeploying(false)
-            } else if (data.type === "error") {
-              setError(data.message)
-              setIsDeploying(false)
-            }
-          } catch (e) {
-            // If not valid JSON, just add as log
-            setLogs((prev) => [...prev, text])
-          }
-        }
-      } else {
-        // Fallback for browsers that don't support streaming
-        const data = await response.json()
-        setDeploymentUrl(data.url)
-        setIsDeploying(false)
-      }
+      const data = await response.json()
+      setDeploymentUrl(data.deploymentUrl)
+      setIsDeploying(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unknown error occurred")
       setIsDeploying(false)
@@ -116,16 +78,6 @@ export default function DeployForm() {
         </Button>
       </form>
 
-      {logs.length > 0 && (
-        <Card className="mt-6 p-4 bg-black text-white font-mono text-sm overflow-auto max-h-96">
-          {logs.map((log, index) => (
-            <div key={index} className="whitespace-pre-wrap">
-              {log}
-            </div>
-          ))}
-        </Card>
-      )}
-
       {error && (
         <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-md flex items-start">
           <AlertCircle className="h-5 w-5 text-red-500 mr-2 flex-shrink-0 mt-0.5" />
@@ -138,8 +90,8 @@ export default function DeployForm() {
           <div className="flex items-start">
             <CheckCircle className="h-5 w-5 text-green-500 mr-2 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-green-700 font-medium">Deployment successful!</p>
-              <p className="mt-1 text-sm text-gray-600">Your site is now available at:</p>
+              <p className="text-green-700 font-medium">Deployment initiated!</p>
+              <p className="mt-1 text-sm text-gray-600">Your site will be available at:</p>
             </div>
           </div>
           <a
@@ -150,6 +102,10 @@ export default function DeployForm() {
           >
             {deploymentUrl}
           </a>
+          <p className="mt-2 text-sm text-gray-500">
+            Note: The actual deployment will happen in the background. The page will refresh automatically to show
+            progress.
+          </p>
         </div>
       )}
     </div>
