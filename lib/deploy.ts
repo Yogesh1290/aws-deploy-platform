@@ -1,12 +1,16 @@
-import { S3 } from "aws-sdk"
-import { exec } from "child_process"
 import fs from "fs-extra"
 import path from "path"
-import simpleGit from "simple-git"
-import { promisify } from "util"
+import { S3 } from "aws-sdk"
 import { v4 as uuidv4 } from "uuid"
+import { promisify } from "util"
+import { exec } from "child_process"
+import * as https from "https"
+import * as stream from "stream"
+import * as zlib from "zlib"
+import * as tar from "tar"
 
 const execPromise = promisify(exec)
+const pipeline = promisify(stream.pipeline)
 
 // Configure AWS SDK
 const s3 = new S3({
@@ -37,11 +41,16 @@ export async function deploy(repoUrl: string, callbacks: DeployCallbacks) {
     onLog(`🚀 Starting deployment for ${repoUrl}`)
     onLog(`📁 Creating project directory: ${projectId}`)
 
-    // Clone the repository
-    onLog(`📥 Cloning repository: ${repoUrl}`)
-    const git = simpleGit()
-    await git.clone(repoUrl, projectDir)
-    onLog("✅ Repository cloned successfully")
+    // Parse GitHub repository URL
+    const repoInfo = parseGitHubUrl(repoUrl)
+    if (!repoInfo) {
+      throw new Error("Invalid GitHub repository URL")
+    }
+
+    // Download the repository as a tarball
+    onLog(`📥 Downloading repository: ${repoUrl}`)
+    await downloadRepository(repoInfo.owner, repoInfo.repo, repoInfo.branch, projectDir)
+    onLog("✅ Repository downloaded successfully")
 
     // Install dependencies
     onLog("📦 Installing dependencies...")
@@ -136,6 +145,109 @@ export async function deploy(repoUrl: string, callbacks: DeployCallbacks) {
       console.error("Cleanup error:", cleanupError)
     }
   }
+}
+
+function parseGitHubUrl(url: string): { owner: string; repo: string; branch: string } | null {
+  // Handle URLs like https://github.com/username/repo
+  const githubRegex = /^https:\/\/github\.com\/([^/]+)\/([^/]+)$/
+  const match = url.match(githubRegex)
+
+  if (match) {
+    return {
+      owner: match[1],
+      repo: match[2],
+      branch: "main", // Default to main branch
+    }
+  }
+
+  return null
+}
+
+async function downloadRepository(owner: string, repo: string, branch: string, destDir: string): Promise<void> {
+  const tarballUrl = `https://api.github.com/repos/${owner}/${repo}/tarball/${branch}`
+  const tarballPath = path.join(TEMP_DIR, `${repo}.tar.gz`)
+
+  // Ensure destination directory exists
+  await fs.ensureDir(destDir)
+
+  // Download the tarball
+  await new Promise<void>((resolve, reject) => {
+    const options = {
+      headers: {
+        "User-Agent": "AWS-Deploy-Platform",
+      },
+    }
+
+    https
+      .get(tarballUrl, options, (response) => {
+        if (response.statusCode === 302 && response.headers.location) {
+          // Follow redirect
+          https
+            .get(response.headers.location, (redirectResponse) => {
+              const fileStream = fs.createWriteStream(tarballPath)
+              redirectResponse.pipe(fileStream)
+
+              fileStream.on("finish", () => {
+                fileStream.close()
+                resolve()
+              })
+
+              fileStream.on("error", (err) => {
+                fs.unlink(tarballPath, () => {})
+                reject(err)
+              })
+            })
+            .on("error", reject)
+        } else if (response.statusCode === 200) {
+          const fileStream = fs.createWriteStream(tarballPath)
+          response.pipe(fileStream)
+
+          fileStream.on("finish", () => {
+            fileStream.close()
+            resolve()
+          })
+
+          fileStream.on("error", (err) => {
+            fs.unlink(tarballPath, () => {})
+            reject(err)
+          })
+        } else {
+          reject(new Error(`Failed to download repository: ${response.statusCode}`))
+        }
+      })
+      .on("error", reject)
+  })
+
+  // Extract the tarball
+  await new Promise<void>((resolve, reject) => {
+    fs.createReadStream(tarballPath)
+      .pipe(zlib.createGunzip())
+      .pipe(tar.extract({ cwd: TEMP_DIR }))
+      .on("finish", resolve)
+      .on("error", reject)
+  })
+
+  // Find the extracted directory (GitHub adds a hash to the directory name)
+  const extractedDirs = await fs.readdir(TEMP_DIR)
+  const extractedDir = extractedDirs.find(
+    (dir) => dir.startsWith(`${owner}-${repo}-`) && fs.statSync(path.join(TEMP_DIR, dir)).isDirectory(),
+  )
+
+  if (!extractedDir) {
+    throw new Error("Could not find extracted repository directory")
+  }
+
+  // Move the contents to the destination directory
+  const extractedPath = path.join(TEMP_DIR, extractedDir)
+  const files = await fs.readdir(extractedPath)
+
+  for (const file of files) {
+    await fs.move(path.join(extractedPath, file), path.join(destDir, file), { overwrite: true })
+  }
+
+  // Clean up
+  await fs.remove(tarballPath)
+  await fs.remove(extractedPath)
 }
 
 async function execWithLogs(command: string, cwd: string, onLog: (message: string) => void): Promise<void> {
